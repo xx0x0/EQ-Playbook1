@@ -1,5 +1,57 @@
 # 故障排查
 
+## 报「禁止运行脚本」/ PSSecurityException
+
+**症状：**
+
+```
+无法加载文件 ...\npm\claude.ps1，因为在此系统上禁止运行脚本。
++ CategoryInfo : SecurityError: (:) []，PSSecurityException
+```
+
+**原因：** Windows 客户端的 PowerShell 执行策略默认是 `Restricted`，禁止运行任何
+`.ps1`。快捷方式跑 `powershell -Command "claude"` 时，PowerShell 优先解析到
+`claude.ps1`，于是被挡。
+
+**容易误判的一点：** 在 Windows Terminal 里敲 `claude` 明明是好的 —— 那是因为
+那个 shell 的执行策略与快捷方式启动的进程不同，不代表策略没问题。
+
+查当前策略（各作用域全是 `Undefined` 就等于 `Restricted`）：
+
+```powershell
+Get-ExecutionPolicy -List
+```
+
+**修复（推荐，不动任何系统安全设置）：** 让快捷方式改调 `claude.cmd` ——
+`.cmd` 不受执行策略管辖：
+
+```powershell
+$name = '<你的快捷方式名>'
+$dir  = '<你的工作区绝对路径>'
+$cmd  = "$env:APPDATA\npm\claude.cmd"
+$lnk  = Join-Path ([Environment]::GetFolderPath('Desktop')) "$name.lnk"
+$ws = New-Object -ComObject WScript.Shell
+$s = $ws.CreateShortcut($lnk)
+$s.TargetPath = 'powershell.exe'
+$s.Arguments  = "-NoExit -Command `"& '$cmd'`""
+$s.WorkingDirectory = $dir
+$s.IconLocation = 'shell32.dll,168'
+$s.Save()
+```
+
+`new-workspace.ps1` 建出来的快捷方式本来就是这个版本，不受此问题影响。
+
+**替代修法（一劳永逸，但改了账户级安全设置）：**
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+之后所有 npm 全局安装的 `.ps1` 工具都能直接跑。`RemoteSigned` = 本地脚本放行、
+网上下载的需签名，比 `Bypass` 稳妥。**这是改你的账户配置，想清楚再动。**
+
+---
+
 ## 桌面快捷方式闪退 / 打不开
 
 **症状:** 双击后黑窗一闪就没,或提示 `claude 不是内部或外部命令`。
